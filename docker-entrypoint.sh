@@ -14,7 +14,7 @@ if [ -z "$OPENAI_API_KEY" ]; then
 fi
 
 # Probe DB reachability so failures show a human-readable reason in the logs
-# instead of an opaque Prisma stack trace. Uses Node's net module (no deps).
+# instead of an opaque Prisma stack trace.
 node -e '
   const net = require("net");
   const u = process.env.DATABASE_URL;
@@ -29,7 +29,11 @@ node -e '
 '
 
 echo "[entrypoint] Applying database migrations..."
-npx prisma migrate deploy
+# Call the prisma CLI directly via its absolute path. The standalone Next.js
+# build does not create node_modules/.bin, so `npx prisma` fails with
+# "prisma: not found" on Alpine. We copied node_modules/prisma into the image,
+# so the CLI entry (build/index.js) is available by path.
+node ./node_modules/prisma/build/index.js migrate deploy
 echo "[entrypoint] Migrations applied successfully."
 
 echo "[entrypoint] Starting server on port ${PORT:-30001}..."
