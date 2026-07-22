@@ -1,0 +1,4 @@
+# Ensure shell scripts use LF line endings in the repo and working copy,
+# otherwise the Docker entrypoint fails with "bad interpreter" on Alpine.
+*.sh text eol=lf
+docker-entrypoint.sh text eol=lf
