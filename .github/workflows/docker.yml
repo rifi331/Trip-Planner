@@ -42,9 +42,13 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # Tag with the short commit SHA AND a date-prefixed tag so each
+          # build is uniquely identifiable and pin-able in compose files.
+          # We deliberately avoid `latest` so installs never accidentally
+          # pull a stale cached image.
           tags: |
-            type=raw,value=latest
             type=sha,prefix=,format=short
+            type=raw,value={{date 'YYYYMMDD'}}-{{sha}}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6

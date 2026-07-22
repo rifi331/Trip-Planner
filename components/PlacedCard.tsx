@@ -46,30 +46,41 @@ export function PlacedCard({ card, slotIndex, onEdit, onDelete, onResize }: Plac
   const startYPx = useRef(0);
   const startDuration = useRef(duration);
 
-  const onResizeStart = useCallback(
-    (e: React.PointerEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      startYPx.current = e.clientY;
-      startDuration.current = duration;
-      document.body.classList.add("resizing-active");
-      const move = (ev: PointerEvent) => {
-        const deltaPx = ev.clientY - startYPx.current;
-        const deltaMin = Math.round(deltaPx / SLOT_HEIGHT_PX) * 30;
-        const next = Math.max(MIN_DURATION_MINUTES, Math.min(MAX_DURATION_MINUTES, startDuration.current + deltaMin));
-        if (next !== startDuration.current) onResize(card.id, next);
-        startDuration.current = next;
-      };
-      const up = () => {
-        document.body.classList.remove("resizing-active");
-        window.removeEventListener("pointermove", move);
-        window.removeEventListener("pointerup", up);
-      };
-      window.addEventListener("pointermove", move);
-      window.addEventListener("pointerup", up);
-    },
-    [card.id, duration, onResize],
-  );
+  // Capture the starting duration ONCE on pointer-down (via the latest ref),
+  // so the resize math is stable for the whole drag even though `duration`
+  // updates in the parent and re-renders this card mid-drag. The callback has
+  // no deps so it is never recreated mid-drag (which previously caused the
+  // value to jump by hundreds of minutes).
+  const durationRef = useRef(duration);
+  durationRef.current = duration;
+  const onResizeRef = useRef(onResize);
+  onResizeRef.current = onResize;
+
+  const onResizeStart = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    startYPx.current = e.clientY;
+    startDuration.current = durationRef.current;
+    document.body.classList.add("resizing-active");
+
+    const move = (ev: PointerEvent) => {
+      const deltaPx = ev.clientY - startYPx.current;
+      // Each 40px slot == 30 min. Snap to 30-min steps.
+      const deltaMin = Math.round(deltaPx / SLOT_HEIGHT_PX) * 30;
+      const next = Math.max(
+        MIN_DURATION_MINUTES,
+        Math.min(MAX_DURATION_MINUTES, startDuration.current + deltaMin),
+      );
+      onResizeRef.current(card.id, next);
+    };
+    const up = () => {
+      document.body.classList.remove("resizing-active");
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }, [card.id]);
 
   return (
     <div

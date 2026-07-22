@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { ALL_CATEGORIES } from "@/lib/constants";
@@ -34,17 +34,23 @@ export function ManualCardModal({ open, onClose, onSubmit, initial }: ManualCard
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Reset fields whenever a different card is opened.
+  // Reset fields ONLY on the false->true open transition. Re-running on every
+  // render (because `initial` is a fresh object each time) was resetting the
+  // duration/cost sliders back to their start value while dragging them.
+  const prevOpen = useRef(false);
   useEffect(() => {
-    if (!open) return;
-    setTitle(initial?.title ?? "");
-    setDescription(initial?.description ?? "");
-    setCategory(initial?.category ?? "TOURIST_ATTRACTION");
-    setDuration(initial?.defaultDurationMinutes ?? 60);
-    setCost(initial?.costLevel ?? 2);
-    setImageUrl(initial?.imageUrl ?? "");
-    setError(null);
-  }, [open, initial]);
+    if (open && !prevOpen.current) {
+      setTitle(initial?.title ?? "");
+      setDescription(initial?.description ?? "");
+      setCategory(initial?.category ?? "TOURIST_ATTRACTION");
+      setDuration(initial?.defaultDurationMinutes ?? 60);
+      setCost(initial?.costLevel ?? 2);
+      setImageUrl(initial?.imageUrl ?? "");
+      setError(null);
+    }
+    prevOpen.current = open;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
