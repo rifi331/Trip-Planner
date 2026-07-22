@@ -28,6 +28,11 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=30001
 
+# Prisma's native engines (Rust binaries) require libssl and the glibc-compat
+# shims on Alpine (musl). Without them migrate deploy fails with
+# "Error load..." / "Could not parse schema engine response".
+RUN apk add --no-cache openssl libc6-compat
+
 RUN addgroup --system --gid 1001 nodejs \
  && adduser  --system --uid 1001 nextjs
 

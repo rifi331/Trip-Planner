@@ -5,6 +5,10 @@ generator client {
   provider = "prisma-client-js"
   // Generate the client into a location that survives the Docker multi-stage build.
   output   = "../node_modules/.prisma/client"
+  // Generate native engine binaries for the runtime target (Alpine / musl).
+  // The build runs on debian (ubuntu runner) but the image runs on Alpine,
+  // so we must explicitly request the linux-musl engine.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
