@@ -29,7 +29,7 @@ node -e '
 '
 
 echo "[entrypoint] Applying database migrations..."
-node ./node_modules/prisma/build/index.js migrate deploy
+npx prisma migrate deploy
 echo "[entrypoint] Migrations applied successfully."
 
 echo "[entrypoint] Starting server on port ${PORT:-30001}..."
