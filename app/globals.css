@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --slot-height: 40px;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-slate-100 text-slate-900 antialiased;
+}
+
+/* Trello-like card surface. */
+.card-surface {
+  @apply rounded-lg bg-white shadow-card transition-shadow;
+}
+.card-surface:hover {
+  @apply shadow-cardHover;
+}
+
+/* Left accent strip helper for category-colored cards. */
+.accent-left {
+  @apply rounded-l-lg;
+}
+
+/* Microsoft Teams-style compact scrollbars. */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(148 163 184) transparent;
+}
+.scrollbar-thin::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: rgb(148 163 184);
+  border-radius: 9999px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(100 116 139);
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Resize handle on placed timeline cards. */
+.resize-handle {
+  cursor: ns-resize;
+}
+
+/* Disable text selection while dragging / resizing. */
+.dragging-active,
+.resizing-active {
+  user-select: none;
+  -webkit-user-select: none;
+}

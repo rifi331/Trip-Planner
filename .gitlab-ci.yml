@@ -1,0 +1,52 @@
+# GitLab CI: build the Docker image and push to BOTH the GitLab Container
+# Registry and GitHub Container Registry (ghcr.io) so you can pull from either
+# when configuring the TrueNAS SCALE Custom App.
+#
+# Required CI/CD variables (Settings -> CI/CD -> Variables):
+#   GHCR_USER  - your GitHub username
+#   GHCR_PAT   - a GitHub Personal Access Token with write:packages scope
+# The GitLab registry is authenticated automatically via $CI_JOB_TOKEN.
+
+stages:
+  - build
+
+variables:
+  # Buildx-free build using Kaniko (no Docker daemon required).
+  IMAGE_TAG_LATEST: "$CI_REGISTRY_IMAGE:latest"
+  IMAGE_TAG_SHA: "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+
+build-and-push:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  before_script:
+    # Auth for GitLab registry (auto) + GHCR (from variables).
+    - |
+      mkdir -p /kaniko/.docker
+      cat > /kaniko/.docker/config.json <<EOF
+      {
+        "auths": {
+          "$CI_REGISTRY": {
+            "username": "gitlab-ci-token",
+            "password": "$CI_JOB_TOKEN"
+          },
+          "https://ghcr.io": {
+            "username": "$GHCR_USER",
+            "password": "$GHCR_PAT"
+          }
+        }
+      }
+      EOF
+  script:
+    - |
+      /kaniko/executor \
+        --context "$CI_PROJECT_DIR" \
+        --dockerfile "$CI_PROJECT_DIR/Dockerfile" \
+        --destination "$IMAGE_TAG_LATEST" \
+        --destination "$IMAGE_TAG_SHA" \
+        --destination "ghcr.io/$GHCR_USER/$CI_PROJECT_NAME:latest" \
+        --destination "ghcr.io/$GHCR_USER/$CI_PROJECT_NAME:$CI_COMMIT_SHORT_SHA" \
+        --cache=true

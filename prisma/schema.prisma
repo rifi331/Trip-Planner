@@ -1,0 +1,78 @@
+// Prisma schema for the Travel Planner application.
+// See: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  // Generate the client into a location that survives the Docker multi-stage build.
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Category of a recommendation card. Used for color coding and AI filtering.
+enum CardCategory {
+  HISTORICAL
+  UNIQUE
+  INSTAGRAMMABLE
+  TOURIST_ATTRACTION
+  RESTAURANT
+  STREET_FOOD
+  NATURE
+  MUSEUM
+}
+
+/// A trip is the top-level container: a destination and a date range.
+model Trip {
+  id        String   @id @default(uuid())
+  title     String
+  destination String
+  startDate DateTime
+  endDate   DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cards          Card[]
+  itinerarySlots ItinerarySlot[]
+}
+
+/// A recommendation card (AI-generated or manual) that can be placed on the timeline.
+/// costLevel is an integer 1-4 ($ - $$$$) representing the price tier of the place.
+model Card {
+  id                     String       @id @default(uuid())
+  tripId                 String
+  trip                   Trip         @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  title                  String
+  description            String?
+  category               CardCategory
+  defaultDurationMinutes Int          @default(60)
+  costLevel              Int          @default(2)
+  // Optional image URL for the place. Stored as a plain string (no upload).
+  // AI cards get one auto-generated; manual cards may set one optionally.
+  imageUrl               String?
+  isAiGenerated          Boolean      @default(false)
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+
+  // A card may optionally be placed on the timeline (one-to-one).
+  itinerarySlot ItinerarySlot?
+}
+
+/// A placed card on the timeline grid for a specific date and start time.
+/// startTime is stored as a "HH:mm" string; durationMinutes is a multiple of 30 (30-360).
+model ItinerarySlot {
+  id              String   @id @default(uuid())
+  tripId          String
+  trip            Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  cardId          String   @unique
+  card            Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  assignedDate    DateTime
+  startTime       String
+  durationMinutes Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([tripId, assignedDate])
+}

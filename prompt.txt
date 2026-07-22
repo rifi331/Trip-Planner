@@ -1,0 +1,77 @@
+Kamu adalah Senior Fullstack Software Engineer & DevOps Specialist. Saya ingin kamu membangun aplikasi web "Travel Planner Berbasis Kartu (Card-Based AI Itinerary Generator)" secara LENGKAP, SIAP EKSEKUSI, dan TANPA PLACEHOLDER (`// TODO`, `/* implement later */`, pemotongan kode, atau singkatan).
+
+Aplikasi ini berarsitektur Monolithic (Frontend + Backend API Routes dalam 1 project Next.js App Router), di-build menggunakan GitLab CI/CD ke GitLab Container Registry, dan di-deploy di TrueNAS SCALE menggunakan Custom App (Docker Compose YAML) yang di-expose via Cloudflare Zero Trust Tunnel.
+
+=========================================
+1. TECH STACK & SYSTEM ARCHITECTURE
+=========================================
+- Framework: Next.js 14+ (App Router, Monolith TypeScript)
+- Database: PostgreSQL + Prisma ORM
+- Styling & UI: Tailwind CSS + Lucide React (Icons)
+- Interactive DnD: Native HTML5 Drag and Drop / @dnd-kit dengan CSS Grid 30-menit interval
+- AI Integration: OpenAI API (`gpt-4o-mini`) via Official SDK
+- Containerization: Multi-stage Dockerfile (Standalone Output)
+- Deployment Target: TrueNAS SCALE Custom App (Docker Compose YAML)
+
+=========================================
+2. DATABASE SCHEMA (`prisma/schema.prisma`)
+=========================================
+Buatkan skema Prisma utuh dengan model:
+- Enum `CardCategory`: HISTORICAL, UNIQUE, INSTAGRAMMABLE, TOURIST_ATTRACTION, RESTAURANT, STREET_FOOD, NATURE, MUSEUM.
+- Model `Trip`: `id` (String UUID @id), `title` (String), `destination` (String), `startDate` (DateTime), `endDate` (DateTime), `createdAt`, `updatedAt`. Relasi Cascade ke `Card` dan `ItinerarySlot`.
+- Model `Card`: `id` (String UUID @id), `tripId` (String FK), `title` (String), `description` (String?), `category` (CardCategory), `defaultDurationMinutes` (Int, default 60), `isAiGenerated` (Boolean, default false), `createdAt`, `updatedAt`. Relasi ke `Trip` dan 1-to-optional `ItinerarySlot`.
+- Model `ItinerarySlot`: `id` (String UUID @id), `tripId` (String FK), `cardId` (String FK @unique), `assignedDate` (DateTime), `startTime` (String, format "HH:mm"), `durationMinutes` (Int, kelipatan 30, range 30-360), `createdAt`, `updatedAt`. Relasi ke `Trip` dan `Card`.
+
+=========================================
+3. BACKEND & API ROUTES IMPLEMENTATION
+=========================================
+Berikan kode UTUH untuk file-file backend berikut:
+
+a) `lib/prisma.ts`: Singleton PrismaClient instance.
+b) `lib/openai.ts`: Fungsi `generateCardsFromAI(destination: string, daysCount: number)` memanggil `gpt-4o-mini` menggunakan Structured Outputs / JSON Schema agar MENGEMBALIKAN array of cards dengan properti: `title`, `description`, `category` (CardCategory), dan `defaultDurationMinutes` (30-360).
+c) API Routes (Next.js App Router):
+   - `app/api/trips/route.ts`: GET (fetch all trips), POST (create trip).
+   - `app/api/trips/[id]/route.ts`: GET (fetch 1 trip include cards & itinerarySlots), PUT (update trip), DELETE (delete trip cascade).
+   - `app/api/trips/[id]/generate-cards/route.ts`: POST (panggil AI service lalu bulk insert ke tabel `Card`).
+   - `app/api/trips/[id]/cards/route.ts`: POST (create manual card oleh user).
+   - `app/api/cards/[cardId]/route.ts`: PUT (update card), DELETE (delete card).
+   - `app/api/trips/[id]/itinerary/route.ts`:
+     • POST: Upsert `ItinerarySlot` (simpan/pindahkan posisi kartu di timeline tanggal & jam tertentu).
+     • DELETE: Unassign kartu dari timeline (hapus `ItinerarySlot` sehingga kartu kembali ke Pool Unassigned).
+     • PATCH: Update `durationMinutes` saat kartu di-resize/stretch.
+
+=========================================
+4. FRONTEND & DND INTERACTIVE CANVAS
+=========================================
+Berikan kode UTUH untuk Halaman Utama Detail Trip (`app/trips/[id]/page.tsx`) dan komponen terkait:
+- Layout Dual-Pane:
+  • Sidebar Kiri (Pool Unassigned Cards): Menampilkan kartu yang BELUM punya `ItinerarySlot`. Ada tombol "Generate AI Cards" (loading state) dan tombol Modal "Tambah Kartu Manual" + Edit/Delete Card.
+  • Canvas Kanan (Timeline Grid per 30 Menit): Sumbu-X adalah kolom tanggal dari `startDate` hingga `endDate`. Sumbu-Y adalah slot jam (00:00 - 23:30, per interval 30 menit).
+- Fitur Interaksi:
+  • Drag & Drop kartu dari Pool Kiri ke Slot Jam di Kolom Tanggal Kanan.
+  • Drag & Drop kartu dari Canvas kembali ke Pool Kiri (Unassign).
+  • Stretch/Resize: Handle di bagian bawah kartu pada Canvas untuk menambah/mengurangi durasi (kelipatan 30 menit, min 30m, max 360m).
+  • Auto-sync ke API backend setiap ada aksi Drag, Drop, Unassign, atau Resize.
+
+=========================================
+5. DOCKER, CI/CD, & TRUENAS DEPLOYMENT
+=========================================
+Berikan file konfigurasi dan dokumentasi deployment berikut secara eksplisit:
+
+a) `next.config.js`: Set `output: 'standalone'`.
+b) `Dockerfile`: Multi-stage build (`deps`, `builder`, `runner`) berbasis `node:20-alpine` teroptimasi untuk Next.js Standalone.
+c) `.gitlab-ci.yml`: Pipeline untuk build Docker image dari repository GitLab dan push secara otomatis ke GitLab Container Registry (`registry.gitlab.com`).
+d) `docker-compose.yml`: File Compose YAML untuk dipasang di TrueNAS SCALE Custom App (termasuk service App & Service PostgreSQL).
+e) `README.md` (Step-by-Step Deployment Guide):
+   - Daftar Environment Variables / Properties lengkap yang harus diset di TrueNAS (`DATABASE_URL`, `OPENAI_API_KEY`, `NEXTAUTH_SECRET`/`PORT`, dll).
+   - Langkah memasukkan Registry Credentials dari GitLab ke TrueNAS.
+   - Langkah menjalankan database migration (`npx prisma db push` / `prisma migrate deploy`) saat pertama kali container jalan.
+   - Konfigurasi routing Cloudflare Zero Trust Tunnel menuju IP & Port TrueNAS Custom App.
+
+=========================================
+STRICT CODE GENERATION RULES (BACA TELITI):
+=========================================
+1. DILARANG menggunakan placeholder seperti `// TODO`, `// Implement here`, atau `/* rest of code */`. Tuliskan seluruh kode lengkap dari baris pertama hingga baris terakhir!
+2. Pastikan import TypeScript, error handling (try-catch), dan tipe data di semua file lengkap tanpa ada syntax error.
+3. Susun output secara rapi berdasarkan struktur direktori Next.js App Router.
+4. Dalam development code, gunakan standard bahasa inggris

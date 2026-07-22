@@ -1,0 +1,51 @@
+### Fitur
+
+1. Trip Management:
+   - User dapat membuat, melihat, memperbarui, dan menghapus trip (Kota/Negara Tujuan, Start Date, End Date).
+
+2. AI Card Generator (OpenAI gpt-4o-mini):
+   - User menekan tombol "Generate Recommendations".
+   - System mengirimkan prompt ke OpenAI API (gpt-4o-mini) menggunakan JSON Structured Outputs / Zod schema.
+   - AI mengembalikan sekumpulan kartu rekomendasi tempat.
+   - Setiap kartu harus memiliki salah satu dari kategori Enum berikut:
+     - HISTORICAL (Tempat Bersejarah)
+     - UNIQUE (Tempat Unik)
+     - INSTAGRAMMABLE (Tempat Instagrammable)
+     - TOURIST_ATTRACTION (Tempat Turis)
+     - RESTAURANT (Restoran)
+     - STREET_FOOD (Street Food)
+     - NATURE (Alam)
+     - MUSEUM (Museum)
+   - Data per kartu: Title, Description singkat, Estimated Duration dalam menit (30m - 360m), Category Enum, dan Cost Level.
+
+3. CRUD Cards (Manual):
+   - Selain dari AI, user bisa Create, Read, Update, dan Delete (CRUD) kartu buatan sendiri secara manual di sidebar pool/kanban.
+
+4. Interactive Timeline Canvas (Drag & Drop & Stretch):
+   - Sisi Kiri: Pool / Unassigned Cards (kumpulan kartu hasil AI & manual yang belum masuk ke jadwal).
+   - Sisi Kanan: Canvas Timeline Harian (Setiap kolom melambangkan tanggal dari Start Date sampai End Date).
+   - Grid Waktu: Setiap kolom tanggal berisi slot waktu 24 jam dengan interval grid per 30 menit (08:00, 08:30, 09:00, dst).
+   - Drag & Drop: User bisa menggeser kartu dari Pool ke slot jam di hari tertentu, atau memindahkannya kembali ke Pool.
+   - Stretch / Resize: Kartu yang ada di timeline bisa di-resize secara vertikal untuk mengubah durasinya (minimal 30 menit, maksimal 6 jam/360 menit).
+
+### COMPLETE API ROUTES SPECIFICATION (Next.js App Router)
+Tolong implementasikan API endpoint lengkap berikut:
+
+- Trip Management:
+  • POST   /api/trips                  : Membuat trip baru (destination, start_date, end_date)
+  • GET    /api/trips                  : Mengambil daftar semua trip
+  • GET    /api/trips/[id]             : Mengambil detail 1 trip beserta semua kartu & itinerary slots-nya
+  • PUT    /api/trips/[id]             : Update detail trip (nama, tanggal, destinasi)
+  • DELETE /api/trips/[id]             : Menghapus trip beserta seluruh kartu & slot terkait (Cascade)
+
+- AI Card Generation:
+  • POST   /api/trips/[id]/generate-cards : Memanggil OpenAI gpt-4o-mini untuk meng-generate kartu rekomendasi dan menyimpannya ke DB
+
+- Manual Card CRUD (Pool / Master Data):
+  • POST   /api/trips/[id]/cards       : Membuat kartu manual baru buatan user
+  • PUT    /api/cards/[cardId]         : Update detail kartu (judul, deskripsi, kategori, estimasi durasi)
+  • DELETE /api/cards/[cardId]         : Menghapus kartu (otomatis menghapus slot di itinerary jika kartu sedang di-assign)
+
+- Itinerary Board & Timeline Sync:
+  • POST   /api/trips/[id]/itinerary   : Save/update batch posisi kartu pada timeline grid
+  • PATCH  /api/itinerary/[slotId]     : Update presisi untuk durasi (resize/stretch) atau perpindahan jam slot secara real-time

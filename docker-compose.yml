@@ -1,0 +1,22 @@
+# TrueNAS SCALE Custom App / Docker Compose for the Travel Planner.
+#
+# PostgreSQL is NOT defined here - the app connects to YOUR existing PostgreSQL
+# instance on TrueNAS via the DATABASE_URL environment variable.
+#
+# Replace the image tag with your own GitLab / GHCR path after the first push.
+services:
+  app:
+    image: registry.gitlab.com/<your-user>/<your-repo>:latest
+    # image: ghcr.io/<your-user>/<your-repo>:latest   # alternative registry
+    container_name: travel-planner
+    ports:
+      # host 30001 -> container 30001 (Cloudflare Tunnel points at host:30001)
+      - "30001:30001"
+    environment:
+      # Point this to your TrueNAS PostgreSQL instance.
+      DATABASE_URL: "${DATABASE_URL}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      OPENAI_MODEL: "gpt-4o-mini"
+      PORT: "30001"
+      NODE_ENV: "production"
+    restart: unless-stopped

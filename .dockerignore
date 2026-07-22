@@ -1,0 +1,14 @@
+# Exclude dev-only files from the Docker build context to keep images small.
+node_modules
+.next
+.git
+.gitignore
+.env
+.env*.local
+npm-debug.log*
+Dockerfile
+docker-compose.yml
+.dockerignore
+README.md
+prisma/*.db
+prisma/*.db-journal
