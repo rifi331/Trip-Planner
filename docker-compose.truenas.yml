@@ -1,0 +1,13 @@
+services:
+  travel-planner:
+    container_name: travel-planner
+    environment:
+      DATABASE_URL: postgres://secret@192.168.100.126:5432/travel_planner?sslmode=disable
+      OPENAI_API_KEY: secret
+      OPENAI_MODEL: gpt-4o-mini
+      PORT: '30001'
+      NODE_ENV: production
+    image: ghcr.io/rifi331/trip-planner:latest
+    ports:
+      - '30001:30001'
+    restart: unless-stopped
