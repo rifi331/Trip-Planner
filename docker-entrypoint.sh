@@ -1,16 +1,32 @@
 #!/bin/sh
-# Entrypoint: apply pending Prisma migrations to PostgreSQL, then start server.
+# Entrypoint: validate config, test DB reachability, apply migrations, start.
 set -e
 
 echo "==== Travel Planner starting ===="
 echo "[entrypoint] Node version: $(node -v)"
 
-# Make sure the database is reachable before running migrations. This produces
-# a clear log line in TrueNAS instead of an opaque prisma error.
 if [ -z "$DATABASE_URL" ]; then
   echo "[entrypoint] FATAL: DATABASE_URL is not set. Stopping."
   exit 1
 fi
+if [ -z "$OPENAI_API_KEY" ]; then
+  echo "[entrypoint] WARNING: OPENAI_API_KEY is not set - AI generation will fail."
+fi
+
+# Probe DB reachability so failures show a human-readable reason in the logs
+# instead of an opaque Prisma stack trace. Uses Node's net module (no deps).
+node -e '
+  const net = require("net");
+  const u = process.env.DATABASE_URL;
+  const m = u.match(/@([^:/?#]+)(?::(\d+))?/);
+  if (!m) { console.error("[db-probe] Could not parse host from DATABASE_URL"); process.exit(1); }
+  const host = m[1];
+  const port = m[2] ? Number(m[2]) : 5432;
+  const sock = net.connect({ host, port, timeout: 5000 });
+  sock.on("connect", () => { console.log("[db-probe] Reached " + host + ":" + port); sock.end(); });
+  sock.on("timeout", () => { console.error("[db-probe] TIMEOUT reaching " + host + ":" + port); sock.destroy(); process.exit(1); });
+  sock.on("error", (e) => { console.error("[db-probe] FAILED reaching " + host + ":" + port + " -> " + e.message); process.exit(1); });
+'
 
 echo "[entrypoint] Applying database migrations..."
 node ./node_modules/prisma/build/index.js migrate deploy
