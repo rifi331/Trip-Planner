@@ -7,11 +7,11 @@ services:
       OPENAI_MODEL: gpt-4o-mini
       PORT: '30001'
       NODE_ENV: production
-    # IMPORTANT: pin to a specific SHA tag, NOT :latest.
-    # latest is often cached by TrueNAS/Docker and pulls a stale image.
-    # Find the latest tag at https://github.com/rifi331/Trip-Planner/pkgs/container/trip-planner
-    # (short commit SHA, e.g. 38b3396) and update it here after each rebuild.
-    image: ghcr.io/rifi331/trip-planner:38b3396
+    # Pin to a specific semantic version tag (NOT :latest, which TrueNAS/Docker
+    # often caches and pulls a stale image). To upgrade, change this to the new
+    # version, e.g. 0.1.1 (bugfix) or 0.2.0 (new feature).
+    # See available versions: https://github.com/rifi331/Trip-Planner/pkgs/container/trip-planner/versions
+    image: ghcr.io/rifi331/trip-planner:0.1.0
     ports:
       - '30001:30001'
     restart: unless-stopped

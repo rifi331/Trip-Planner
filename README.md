@@ -35,6 +35,29 @@ npm test
 
 ---
 
+## 2b. Versioning & releasing new image versions
+
+Container images are tagged with **semantic versions** (not `latest`), so a
+TrueNAS install always pins an exact version and never silently pulls a
+different image.
+
+- **Bug fixes / patches**: `0.1.0` → `0.1.1`
+- **New features**: `0.1.x` → `0.2.0`
+- **Breaking change**: `0.x.y` → `1.0.0`
+
+To release a new version, from a clean `main`:
+
+```bash
+git tag v0.1.1          # the version you want to publish
+git push origin v0.1.1  # triggers the GHCR build
+```
+
+This produces image tags `0.1.1`, `0.1`, and `0` on
+`ghcr.io/rifi331/trip-planner`. Update the `image:` line in
+`docker-compose.truenas.yml` to the new version and redeploy.
+
+---
+
 ## 3. Prepare your PostgreSQL on TrueNAS
 
 You only need to do this once. The app container does **not** run its own

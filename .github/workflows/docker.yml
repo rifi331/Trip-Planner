@@ -1,24 +1,32 @@
-# Build and push the Docker image to GitHub Container Registry (ghcr.io)
-# on every push to main. Uses the built-in GITHUB_TOKEN, so no extra secrets
-# or PAT setup are required. Image is published as public.
+# Build and push the Docker image to GitHub Container Registry (ghcr.io).
+#
+# Two trigger paths:
+#  - Push to main  -> builds an intermediate "edge" image (for quick testing).
+#  - Push a tag v*  -> builds a RELEASE image tagged with the semantic version.
+#    Use tags like v0.1.0, v0.1.1, v0.2.0 following SemVer.
+#
+# Versioning convention:
+#  - 0.1.0 -> 0.1.1  : bug fixes / patches
+#  - 0.1.x -> 0.2.0  : new features
+#  - 0.x.y -> 1.0.0  : major / breaking change
+#
+# To release a new version locally:
+#   git tag v0.1.1
+#   git push origin v0.1.1
 name: Build and Push Docker Image
 
 on:
   push:
     branches: [main]
-  # Allow manual triggering from the Actions tab.
-  workflow_dispatch:
+    tags: ["v*"]
 
 env:
   REGISTRY: ghcr.io
-  # github.repository = "<owner>/<repo>" -> lowercased for ghcr.io naming.
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    # The id-token write permission is not needed; packages:write is what
-    # allows pushing to ghcr.io using the automatic GITHUB_TOKEN.
     permissions:
       contents: read
       packages: write
@@ -37,18 +45,23 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # docker/metadata-action derives the right tags automatically:
+      #  - on a `v0.1.2` tag      -> 0.1.2, 0.1, 0 (SemVer variants)
+      #  - on a push to main      -> edge (intermediate, not for prod)
+      #  We deliberately NEVER publish a `latest` tag so TrueNAS installs that
+      #  pin a version never silently pull a different image.
       - name: Extract metadata (tags, labels)
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          # Tag with the short commit SHA AND a date-prefixed tag so each
-          # build is uniquely identifiable and pin-able in compose files.
-          # We deliberately avoid `latest` so installs never accidentally
-          # pull a stale cached image.
           tags: |
-            type=sha,prefix=,format=short
-            type=raw,value={{date 'YYYYMMDD'}}-{{sha}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=edge,enable={{is_default_branch}}
+          flavor: |
+            latest=false
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -58,6 +71,5 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Cache layers between runs to speed up subsequent builds.
           cache-from: type=gha
           cache-to: type=gha,mode=max
