@@ -239,12 +239,20 @@ export function TripDetailClient({ tripId }: { tripId: string }) {
       });
       if (!res.ok) throw new Error("Failed to update card");
 
-      // If the modal edited a placed slot's duration, persist it via PATCH.
-      if (value.slotDurationMinutes !== null && editing.itinerarySlot && editing.itinerarySlot.id !== "temp") {
+      // If the modal edited a placed slot's duration and/or start time, persist
+      // via PATCH. The server auto-fits the duration to avoid overlap.
+      if (
+        (value.slotDurationMinutes !== null || value.slotStartTime !== null) &&
+        editing.itinerarySlot &&
+        editing.itinerarySlot.id !== "temp"
+      ) {
+        const patchBody: Record<string, unknown> = {};
+        if (value.slotDurationMinutes !== null) patchBody.durationMinutes = value.slotDurationMinutes;
+        if (value.slotStartTime !== null) patchBody.startTime = value.slotStartTime;
         await fetch(`/api/itinerary/${editing.itinerarySlot.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ durationMinutes: value.slotDurationMinutes }),
+          body: JSON.stringify(patchBody),
         });
       }
     } else {
@@ -334,7 +342,23 @@ export function TripDetailClient({ tripId }: { tripId: string }) {
           open={manualOpen}
           onClose={() => setManualOpen(false)}
           onSubmit={saveCard}
-          slotDuration={editingCard?.itinerarySlot?.durationMinutes}
+          slot={
+            editingCard?.itinerarySlot
+              ? {
+                  startTime: editingCard.itinerarySlot.startTime,
+                  durationMinutes: editingCard.itinerarySlot.durationMinutes,
+                }
+              : undefined
+          }
+          onUnassign={async () => {
+            if (!editingCard?.itinerarySlot) return;
+            await fetch(`/api/trips/${tripId}/itinerary`, {
+              method: "DELETE",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ cardIds: [editingCard.id] }),
+            });
+            await load();
+          }}
           initial={
             editingCard
               ? {

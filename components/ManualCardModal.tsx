@@ -1,11 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { ALL_CATEGORIES } from "@/lib/constants";
-import { CATEGORY_LABELS } from "@/lib/constants";
+import { ALL_CATEGORIES, CATEGORY_LABELS, SLOT_INTERVAL_MINUTES, SLOTS_PER_DAY } from "@/lib/constants";
+import { buildTimeLabels, slotIndexToTime, timeToSlotIndex } from "@/lib/date-utils";
 import type { CardCategory } from "@prisma/client";
+
+const TIME_OPTIONS = buildTimeLabels(); // 48 labels: "00:00" .. "23:30"
+
+export interface SlotEditing {
+  startTime: string;
+  durationMinutes: number;
+}
 
 export interface CardFormValue {
   title: string;
@@ -14,55 +22,62 @@ export interface CardFormValue {
   defaultDurationMinutes: number;
   costLevel: number;
   imageUrl: string | null;
-  /** Present (non-null) when the modal edited the scheduled slot duration. */
+  /** Present (non-null) when the modal edited the scheduled slot duration/start. */
   slotDurationMinutes: number | null;
+  /** Present (non-null) when the modal edited the scheduled slot start time. */
+  slotStartTime: string | null;
 }
 
 export interface ManualCardModalProps {
   open: boolean;
   onClose: () => void;
   onSubmit: (value: CardFormValue) => Promise<void>;
+  /** Called when the user clicks "Remove from schedule". */
+  onUnassign?: () => Promise<void> | void;
   initial?: Partial<CardFormValue>;
-  /** When set, the duration slider edits this scheduled (slot) duration
-   *  instead of the card's default duration. The slot is updated via PATCH
-   *  by the parent (passed back through onSubmit as slotDurationMinutes). */
-  slotDuration?: number;
+  /** When set, the card is placed; the modal edits the slot's start + duration. */
+  slot?: SlotEditing;
 }
 
-// Modal to create or edit a single card manually.
-export function ManualCardModal({ open, onClose, onSubmit, initial, slotDuration }: ManualCardModalProps) {
-  // Whether the slider edits the scheduled (slot) duration vs the card default.
-  const editingSlot = slotDuration !== undefined;
+export function ManualCardModal({ open, onClose, onSubmit, onUnassign, initial, slot }: ManualCardModalProps) {
+  const editingSlot = !!slot;
   const [title, setTitle] = useState(initial?.title ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [category, setCategory] = useState<CardCategory>(initial?.category ?? "TOURIST_ATTRACTION");
-  // When editing a placed card, the slider reflects/edits the slot duration;
-  // otherwise it edits the card's default duration.
+  // Duration: slot duration when placed, else the card default.
   const [duration, setDuration] = useState(
-    editingSlot ? slotDuration! : initial?.defaultDurationMinutes ?? 60,
+    slot ? slot.durationMinutes : initial?.defaultDurationMinutes ?? 60,
   );
+  const [startTime, setStartTime] = useState(slot ? slot.startTime : "08:00");
   const [cost, setCost] = useState(initial?.costLevel ?? 2);
   const [imageUrl, setImageUrl] = useState(initial?.imageUrl ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Reset fields ONLY on the false->true open transition. Re-running on every
-  // render (because `initial` is a fresh object each time) was resetting the
-  // duration/cost sliders back to their start value while dragging them.
+  // Reset fields ONLY on the false->true open transition.
   const prevOpen = useRef(false);
   useEffect(() => {
     if (open && !prevOpen.current) {
       setTitle(initial?.title ?? "");
       setDescription(initial?.description ?? "");
       setCategory(initial?.category ?? "TOURIST_ATTRACTION");
-      setDuration(editingSlot ? slotDuration! : initial?.defaultDurationMinutes ?? 60);
+      setDuration(slot ? slot.durationMinutes : initial?.defaultDurationMinutes ?? 60);
+      setStartTime(slot ? slot.startTime : "08:00");
       setCost(initial?.costLevel ?? 2);
       setImageUrl(initial?.imageUrl ?? "");
       setError(null);
     }
     prevOpen.current = open;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, editingSlot, slotDuration]);
+  }, [open, slot]);
+
+  // Computed end time = start + duration (clamped to 23:30 / end-of-day).
+  const endTime = useMemo(() => {
+    if (!editingSlot) return null;
+    const startMin = timeToSlotIndex(startTime) * SLOT_INTERVAL_MINUTES;
+    const endMin = Math.min(SLOTS_PER_DAY * SLOT_INTERVAL_MINUTES, startMin + duration);
+    return slotIndexToTime(Math.floor(endMin / SLOT_INTERVAL_MINUTES));
+  }, [editingSlot, startTime, duration]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -80,13 +95,26 @@ export function ManualCardModal({ open, onClose, onSubmit, initial, slotDuration
         defaultDurationMinutes: duration,
         costLevel: cost,
         imageUrl: imageUrl.trim() || null,
-        // When editing a placed card, hand back the slot duration so the parent
-        // can PATCH the slot; otherwise null (card default only).
         slotDurationMinutes: editingSlot ? duration : null,
+        slotStartTime: editingSlot ? startTime : null,
       });
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save card.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleUnassign() {
+    if (!onUnassign) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onUnassign();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to remove from schedule.");
     } finally {
       setBusy(false);
     }
@@ -99,6 +127,11 @@ export function ManualCardModal({ open, onClose, onSubmit, initial, slotDuration
       title={initial ? "Edit Card" : "Add Manual Card"}
       footer={
         <>
+          {editingSlot && onUnassign && (
+            <Button variant="danger" size="sm" onClick={handleUnassign} disabled={busy} className="mr-auto">
+              <Trash2 size={13} /> Remove from schedule
+            </Button>
+          )}
           <Button variant="secondary" size="sm" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button type="submit" size="sm" form="card-form" disabled={busy}>{busy ? "Saving..." : "Save"}</Button>
         </>
@@ -134,6 +167,27 @@ export function ManualCardModal({ open, onClose, onSubmit, initial, slotDuration
         <L label={`Cost level: ${"$".repeat(cost)}`}>
           <input type="range" min={1} max={4} step={1} value={cost} onChange={(e) => setCost(Number(e.target.value))} className="w-full" />
         </L>
+        {editingSlot && (
+          <div className="grid grid-cols-2 gap-3 rounded-md border border-brand-200 bg-brand-50 p-2">
+            <L label="Start time">
+              <select
+                className="cinput"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+              >
+                {TIME_OPTIONS.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </L>
+            <L label="End time (auto)">
+              <input className="cinput bg-slate-50" value={endTime ?? ""} readOnly />
+            </L>
+            <p className="col-span-2 text-[11px] text-slate-500">
+              The card will move to {startTime} when you save (duration auto-fits to avoid overlap).
+            </p>
+          </div>
+        )}
         {error && <p className="text-sm text-red-600">{error}</p>}
       </form>
       <style jsx>{`
