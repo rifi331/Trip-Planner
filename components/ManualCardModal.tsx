@@ -14,6 +14,8 @@ export interface CardFormValue {
   defaultDurationMinutes: number;
   costLevel: number;
   imageUrl: string | null;
+  /** Present (non-null) when the modal edited the scheduled slot duration. */
+  slotDurationMinutes: number | null;
 }
 
 export interface ManualCardModalProps {
@@ -21,14 +23,24 @@ export interface ManualCardModalProps {
   onClose: () => void;
   onSubmit: (value: CardFormValue) => Promise<void>;
   initial?: Partial<CardFormValue>;
+  /** When set, the duration slider edits this scheduled (slot) duration
+   *  instead of the card's default duration. The slot is updated via PATCH
+   *  by the parent (passed back through onSubmit as slotDurationMinutes). */
+  slotDuration?: number;
 }
 
 // Modal to create or edit a single card manually.
-export function ManualCardModal({ open, onClose, onSubmit, initial }: ManualCardModalProps) {
+export function ManualCardModal({ open, onClose, onSubmit, initial, slotDuration }: ManualCardModalProps) {
+  // Whether the slider edits the scheduled (slot) duration vs the card default.
+  const editingSlot = slotDuration !== undefined;
   const [title, setTitle] = useState(initial?.title ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [category, setCategory] = useState<CardCategory>(initial?.category ?? "TOURIST_ATTRACTION");
-  const [duration, setDuration] = useState(initial?.defaultDurationMinutes ?? 60);
+  // When editing a placed card, the slider reflects/edits the slot duration;
+  // otherwise it edits the card's default duration.
+  const [duration, setDuration] = useState(
+    editingSlot ? slotDuration! : initial?.defaultDurationMinutes ?? 60,
+  );
   const [cost, setCost] = useState(initial?.costLevel ?? 2);
   const [imageUrl, setImageUrl] = useState(initial?.imageUrl ?? "");
   const [busy, setBusy] = useState(false);
@@ -43,14 +55,14 @@ export function ManualCardModal({ open, onClose, onSubmit, initial }: ManualCard
       setTitle(initial?.title ?? "");
       setDescription(initial?.description ?? "");
       setCategory(initial?.category ?? "TOURIST_ATTRACTION");
-      setDuration(initial?.defaultDurationMinutes ?? 60);
+      setDuration(editingSlot ? slotDuration! : initial?.defaultDurationMinutes ?? 60);
       setCost(initial?.costLevel ?? 2);
       setImageUrl(initial?.imageUrl ?? "");
       setError(null);
     }
     prevOpen.current = open;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, editingSlot, slotDuration]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -68,6 +80,9 @@ export function ManualCardModal({ open, onClose, onSubmit, initial }: ManualCard
         defaultDurationMinutes: duration,
         costLevel: cost,
         imageUrl: imageUrl.trim() || null,
+        // When editing a placed card, hand back the slot duration so the parent
+        // can PATCH the slot; otherwise null (card default only).
+        slotDurationMinutes: editingSlot ? duration : null,
       });
       onClose();
     } catch (err) {
@@ -112,7 +127,7 @@ export function ManualCardModal({ open, onClose, onSubmit, initial }: ManualCard
               ))}
             </select>
           </L>
-          <L label={`Duration: ${duration} min`}>
+          <L label={`${editingSlot ? "Scheduled duration" : "Duration"}: ${duration} min`}>
             <input type="range" min={30} max={360} step={30} value={duration} onChange={(e) => setDuration(Number(e.target.value))} className="w-full" />
           </L>
         </div>

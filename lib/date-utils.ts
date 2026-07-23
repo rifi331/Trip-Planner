@@ -91,6 +91,25 @@ export function atLocalMidnight(date: Date | string): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
+/**
+ * Timezone-safe local date key: "YYYY-MM-DD" built from local year/month/date.
+ * Use this instead of Date.toISOString() when carrying a calendar day through
+ * JSON / dnd-kit data — toISOString() shifts non-UTC days by one.
+ */
+export function toLocalDateKey(date: Date | string): string {
+  const d = atLocalMidnight(date);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Parse a "YYYY-MM-DD" key back into a local-midnight Date. */
+export function fromLocalDateKey(key: string): Date {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+}
+
 /** Return true if both dates refer to the same calendar day. */
 export function isSameDay(a: Date | string, b: Date | string): boolean {
   const x = asDate(a);

@@ -6,6 +6,7 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -15,14 +16,14 @@ import { ArrowLeft, MapPin, Plane } from "lucide-react";
 import type { TripWithRelations } from "@/lib/types";
 import type { CardWithSlot } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
-import { CardPool } from "@/components/CardPool";
+import { CardPool, type PendingSlot } from "@/components/CardPool";
 import { ItineraryCanvas } from "@/components/ItineraryCanvas";
 import { ManualCardModal, type CardFormValue } from "@/components/ManualCardModal";
 import { SLOT_HEIGHT_PX } from "@/lib/constants";
-import { slotIndexToTime, atLocalMidnight } from "@/lib/date-utils";
+import { slotIndexToTime, fromLocalDateKey, formatDayLabel } from "@/lib/date-utils";
 
 // Orchestrates the trip detail view: load trip, DnD (pool <-> canvas, move),
-// resize, CRUD cards, and auto-sync to the API with optimistic updates.
+// resize, click-to-place, CRUD cards, and auto-sync with optimistic updates.
 export function TripDetailClient({ tripId }: { tripId: string }) {
   const [trip, setTrip] = useState<TripWithRelations | null>(null);
   const [loading, setLoading] = useState(true);
@@ -31,9 +32,13 @@ export function TripDetailClient({ tripId }: { tripId: string }) {
   const [manualOpen, setManualOpen] = useState(false);
   const [editingCard, setEditingCard] = useState<CardWithSlot | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const [pointerY, setPointerY] = useState(0);
+  const [pendingSlot, setPendingSlot] = useState<PendingSlot | null>(null);
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  // Desktop: instant drag after 5px move. Mobile: 2-second hold then wiggle.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 2000, tolerance: 5 } }),
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -64,13 +69,6 @@ export function TripDetailClient({ tripId }: { tripId: string }) {
     setActiveCard(trip?.cards.find((c) => c.id === cardId) ?? null);
   }
 
-  // Track the live pointer Y so we can compute the target slot on drop.
-  useEffect(() => {
-    const onMove = (e: PointerEvent) => setPointerY(e.clientY);
-    window.addEventListener("pointermove", onMove);
-    return () => window.removeEventListener("pointermove", onMove);
-  }, []);
-
   async function onDragEnd(e: DragEndEvent) {
     setActiveCard(null);
     if (!trip) return;
@@ -78,8 +76,9 @@ export function TripDetailClient({ tripId }: { tripId: string }) {
     const card = trip.cards.find((c) => c.id === cardId);
     if (!card) return;
 
-    // Drop on pool area => unassign.
     const overType = e.over?.data.current?.type;
+
+    // Drop on pool area => unassign the card.
     if (overType === "pool") {
       if (!card.itinerarySlot) return;
       const prev = trip;
@@ -99,17 +98,26 @@ export function TripDetailClient({ tripId }: { tripId: string }) {
     }
 
     // Drop on a day column => place/move at the slot under the pointer.
-    const dayIso = e.over?.data.current?.day as string | undefined;
-    if (!dayIso) return;
-    const day = atLocalMidnight(new Date(dayIso));
+    const dayKey = e.over?.data.current?.day as string | undefined;
+    if (!dayKey) return;
+    const day = fromLocalDateKey(dayKey);
     const rect = e.over?.rect;
     let slotIndex = 0;
     if (rect) {
+      // Use the pointer delta from drag start + the droppable's current rect.
+      const pointerY = rect.top + (e.delta.y ?? 0);
       const offsetY = pointerY - rect.top;
       slotIndex = Math.max(0, Math.min(47, Math.floor(offsetY / SLOT_HEIGHT_PX)));
     }
+    await placeCard(card, day, slotIndex);
+  }
+
+  // Shared place/move routine used by both drag-drop and click-to-place.
+  async function placeCard(card: CardWithSlot, day: Date, slotIndex: number) {
+    if (!trip) return;
     const startTime = slotIndexToTime(slotIndex);
     const durationMinutes = card.itinerarySlot?.durationMinutes ?? card.defaultDurationMinutes;
+    const cardId = card.id;
 
     const prev = trip;
     setTrip({
@@ -158,6 +166,21 @@ export function TripDetailClient({ tripId }: { tripId: string }) {
     }
   }
 
+  // Click-to-place flow: tapping an empty slot stores it as pending.
+  function onSelectSlot(dayKey: string, slotIndex: number) {
+    const day = fromLocalDateKey(dayKey);
+    const label = `${formatDayLabel(day)} ${slotIndexToTime(slotIndex)}`;
+    setPendingSlot({ dayKey, slotIndex, label });
+  }
+
+  // Then tapping a pool card places it at the pending slot.
+  async function onPlaceFromPool(card: CardWithSlot) {
+    if (!pendingSlot || !trip) return;
+    const day = fromLocalDateKey(pendingSlot.dayKey);
+    await placeCard(card, day, pendingSlot.slotIndex);
+    setPendingSlot(null);
+  }
+
   async function onResize(cardId: string, newDurationMinutes: number) {
     if (!trip) return;
     const card = trip.cards.find((c) => c.id === cardId);
@@ -189,19 +212,44 @@ export function TripDetailClient({ tripId }: { tripId: string }) {
     }
   }
 
+  // Save a card. When the modal reported a slot duration, PATCH the slot too.
   async function saveCard(value: CardFormValue) {
-    if (editingCard) {
-      const res = await fetch(`/api/cards/${editingCard.id}`, {
+    const editing = editingCard;
+    if (editing) {
+      const res = await fetch(`/api/cards/${editing.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(value),
+        body: JSON.stringify({
+          title: value.title,
+          description: value.description,
+          category: value.category,
+          defaultDurationMinutes: value.defaultDurationMinutes,
+          costLevel: value.costLevel,
+          imageUrl: value.imageUrl,
+        }),
       });
       if (!res.ok) throw new Error("Failed to update card");
+
+      // If the modal edited a placed slot's duration, persist it via PATCH.
+      if (value.slotDurationMinutes !== null && editing.itinerarySlot && editing.itinerarySlot.id !== "temp") {
+        await fetch(`/api/itinerary/${editing.itinerarySlot.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ durationMinutes: value.slotDurationMinutes }),
+        });
+      }
     } else {
       const res = await fetch(`/api/trips/${tripId}/cards`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(value),
+        body: JSON.stringify({
+          title: value.title,
+          description: value.description,
+          category: value.category,
+          defaultDurationMinutes: value.defaultDurationMinutes,
+          costLevel: value.costLevel,
+          imageUrl: value.imageUrl,
+        }),
       });
       if (!res.ok) throw new Error("Failed to create card");
     }
@@ -222,19 +270,18 @@ export function TripDetailClient({ tripId }: { tripId: string }) {
   return (
     <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
       <main className="flex h-screen flex-col">
-        {/* Teams-style header. */}
-        <header className="flex items-center justify-between border-b border-brand-800 bg-brand-700 px-4 py-2.5 text-white shadow-md">
-          <div className="flex items-center gap-3">
+        <header className="flex items-center justify-between border-b border-brand-800 bg-brand-700 px-3 py-2 text-white shadow-md sm:px-4 sm:py-2.5">
+          <div className="flex items-center gap-2 sm:gap-3">
             <Link href="/" className="rounded p-1 hover:bg-white/10" aria-label="Back">
               <ArrowLeft size={18} />
             </Link>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white/20">
-              <Plane size={16} />
+            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-white/20 sm:h-8 sm:w-8">
+              <Plane size={14} />
             </div>
             <div>
-              <h1 className="text-base font-bold leading-tight">{trip.title}</h1>
-              <p className="inline-flex items-center gap-1 text-[11px] text-brand-100">
-                <MapPin size={10} /> {trip.destination}
+              <h1 className="text-sm font-bold leading-tight sm:text-base">{trip.title}</h1>
+              <p className="inline-flex items-center gap-1 text-[10px] text-brand-100 sm:text-[11px]">
+                <MapPin size={9} /> {trip.destination}
               </p>
             </div>
           </div>
@@ -243,15 +290,20 @@ export function TripDetailClient({ tripId }: { tripId: string }) {
           <CardPool
             tripId={tripId}
             cards={poolCards}
+            pendingSlot={pendingSlot}
             onAddManual={() => { setEditingCard(null); setManualOpen(true); }}
             onEditCard={(c) => { setEditingCard(c); setManualOpen(true); }}
             onDeleteCard={deleteCard}
+            onPlaceCard={onPlaceFromPool}
+            onCancelPending={() => setPendingSlot(null)}
             onGenerated={load}
           />
           <ItineraryCanvas
             startDate={trip.startDate}
             endDate={trip.endDate}
             cards={allCards}
+            pendingSlot={pendingSlot}
+            onSelectSlot={onSelectSlot}
             onEditCard={(c) => { setEditingCard(c); setManualOpen(true); }}
             onDeleteCard={deleteCard}
             onResize={onResize}
@@ -264,7 +316,7 @@ export function TripDetailClient({ tripId }: { tripId: string }) {
         )}
         <DragOverlay>
           {activeCard ? (
-            <div className="w-64 rounded-md border border-brand-300 bg-white p-2 text-sm font-medium text-slate-800 shadow-cardHover">
+            <div className="wiggle w-64 rounded-md border border-brand-300 bg-white p-2 text-sm font-medium text-slate-800 shadow-cardHover">
               {activeCard.title}
             </div>
           ) : null}
@@ -273,6 +325,7 @@ export function TripDetailClient({ tripId }: { tripId: string }) {
           open={manualOpen}
           onClose={() => setManualOpen(false)}
           onSubmit={saveCard}
+          slotDuration={editingCard?.itinerarySlot?.durationMinutes}
           initial={
             editingCard
               ? {

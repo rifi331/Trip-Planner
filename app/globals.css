@@ -59,3 +59,16 @@ body {
   user-select: none;
   -webkit-user-select: none;
 }
+
+/* Wiggle animation shown when a card enters drag mode (e.g. after the
+   2-second hold on touch), signalling "this card is now movable". */
+@keyframes wiggle {
+  0%, 100% { transform: rotate(0deg); }
+  20% { transform: rotate(-2.5deg); }
+  40% { transform: rotate(2.5deg); }
+  60% { transform: rotate(-2deg); }
+  80% { transform: rotate(2deg); }
+}
+.wiggle {
+  animation: wiggle 0.4s ease-in-out infinite;
+}

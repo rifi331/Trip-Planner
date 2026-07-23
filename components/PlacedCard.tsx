@@ -11,16 +11,15 @@ import { CategoryBadge } from "@/components/ui/Badge";
 import { CostLevelDots } from "@/components/ui/CostLevelDots";
 import { CardImage } from "@/components/ui/CardImage";
 
-// Event-block style card on the Teams-like calendar.
-const CAT_STYLE: Record<CardCategory, { bg: string; border: string; bar: string; text: string }> = {
-  HISTORICAL: { bg: "#fffbeb", border: "#fbbf24", bar: "#d97706", text: "#92400e" },
-  UNIQUE: { bg: "#f5f3ff", border: "#c4b5fd", bar: "#7c3aed", text: "#5b21b6" },
-  INSTAGRAMMABLE: { bg: "#fdf2f8", border: "#f9a8d4", bar: "#db2777", text: "#9d174d" },
-  TOURIST_ATTRACTION: { bg: "#eff6ff", border: "#93c5fd", bar: "#2563eb", text: "#1e40af" },
-  RESTAURANT: { bg: "#fef2f2", border: "#fca5a5", bar: "#dc2626", text: "#991b1b" },
-  STREET_FOOD: { bg: "#fff7ed", border: "#fdba74", bar: "#ea580c", text: "#9a3412" },
-  NATURE: { bg: "#f0fdf4", border: "#86efac", bar: "#16a34a", text: "#166534" },
-  MUSEUM: { bg: "#f0fdfa", border: "#5eead4", bar: "#0d9488", text: "#115e59" },
+const CAT_STYLE: Record<CardCategory, { bg: string; border: string; text: string }> = {
+  HISTORICAL: { bg: "#fffbeb", border: "#fbbf24", text: "#92400e" },
+  UNIQUE: { bg: "#f5f3ff", border: "#c4b5fd", text: "#5b21b6" },
+  INSTAGRAMMABLE: { bg: "#fdf2f8", border: "#f9a8d4", text: "#9d174d" },
+  TOURIST_ATTRACTION: { bg: "#eff6ff", border: "#93c5fd", text: "#1e40af" },
+  RESTAURANT: { bg: "#fef2f2", border: "#fca5a5", text: "#991b1b" },
+  STREET_FOOD: { bg: "#fff7ed", border: "#fdba74", text: "#9a3412" },
+  NATURE: { bg: "#f0fdf4", border: "#86efac", text: "#166534" },
+  MUSEUM: { bg: "#f0fdfa", border: "#5eead4", text: "#115e59" },
 };
 
 export interface PlacedCardProps {
@@ -38,6 +37,9 @@ export function PlacedCard({ card, slotIndex, onEdit, onDelete, onResize }: Plac
   const height = (duration / 30) * SLOT_HEIGHT_PX;
   const s = CAT_STYLE[card.category];
 
+  // Only the grip handle is a drag listener (not the whole card), so the
+  // edit/delete buttons and image don't start a drag. The grip is also large
+  // enough to be a comfortable touch target.
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `canvas:${card.id}`,
     data: { type: "canvas", cardId: card.id },
@@ -46,11 +48,8 @@ export function PlacedCard({ card, slotIndex, onEdit, onDelete, onResize }: Plac
   const startYPx = useRef(0);
   const startDuration = useRef(duration);
 
-  // Capture the starting duration ONCE on pointer-down (via the latest ref),
-  // so the resize math is stable for the whole drag even though `duration`
-  // updates in the parent and re-renders this card mid-drag. The callback has
-  // no deps so it is never recreated mid-drag (which previously caused the
-  // value to jump by hundreds of minutes).
+  // Keep latest duration/onResize in refs so the resize callback is stable
+  // (never recreated mid-drag), which previously caused minutes to jump.
   const durationRef = useRef(duration);
   durationRef.current = duration;
   const onResizeRef = useRef(onResize);
@@ -62,10 +61,8 @@ export function PlacedCard({ card, slotIndex, onEdit, onDelete, onResize }: Plac
     startYPx.current = e.clientY;
     startDuration.current = durationRef.current;
     document.body.classList.add("resizing-active");
-
     const move = (ev: PointerEvent) => {
       const deltaPx = ev.clientY - startYPx.current;
-      // Each 40px slot == 30 min. Snap to 30-min steps.
       const deltaMin = Math.round(deltaPx / SLOT_HEIGHT_PX) * 30;
       const next = Math.max(
         MIN_DURATION_MINUTES,
@@ -93,13 +90,20 @@ export function PlacedCard({ card, slotIndex, onEdit, onDelete, onResize }: Plac
         borderColor: s.border,
         color: s.text,
       }}
-      className={`group absolute left-1 right-1 z-10 flex flex-col overflow-hidden rounded-md border-l-4 border shadow-card ${isDragging ? "opacity-40" : ""}`}
-      {...attributes}
-      {...listeners}
+      className={`absolute left-1 right-1 z-10 flex flex-col overflow-hidden rounded-md border-l-4 border shadow-card ${isDragging ? "opacity-30" : ""}`}
     >
       <div className="flex items-start justify-between gap-1 p-1.5">
-        <div className="flex min-w-0 items-start gap-1">
-          <GripVertical size={11} className="mt-0.5 shrink-0 opacity-40" />
+        <div className="flex min-w-0 items-start gap-0.5">
+          {/* Dedicated grip drag handle (large touch target). */}
+          <button
+            type="button"
+            className="flex h-7 w-5 shrink-0 cursor-grab items-center justify-center rounded opacity-50 active:cursor-grabbing"
+            {...attributes}
+            {...listeners}
+            aria-label="Drag card"
+          >
+            <GripVertical size={14} />
+          </button>
           <div className="min-w-0">
             <p className="truncate text-xs font-semibold leading-tight">{card.title}</p>
             <p className="inline-flex items-center gap-0.5 text-[10px] opacity-80">

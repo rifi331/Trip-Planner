@@ -55,7 +55,8 @@ function getClient(): OpenAI {
  * JSON Schema passed to the OpenAI Structured Outputs feature. The model is
  * forced to emit an object that matches this schema exactly.
  */
-function buildResponseSchema() {
+function buildResponseSchema(categories?: CardCategory[]) {
+  const allowedCategories = categories && categories.length > 0 ? categories : ALL_CATEGORIES;
   return {
     type: "object" as const,
     properties: {
@@ -69,7 +70,7 @@ function buildResponseSchema() {
             description: { type: "string" as const },
             category: {
               type: "string" as const,
-              enum: ALL_CATEGORIES,
+              enum: allowedCategories,
             },
             defaultDurationMinutes: {
               type: "integer" as const,
@@ -98,10 +99,19 @@ function buildResponseSchema() {
   };
 }
 
-function buildSystemPrompt(destination: string, daysCount: number): string {
-  const categoryGuide = ALL_CATEGORIES.map(
-    (c) => `- ${c}: ${CATEGORY_DESCRIPTIONS[c]}`,
-  ).join("\n");
+function buildSystemPrompt(
+  destination: string,
+  daysCount: number,
+  categories?: CardCategory[],
+): string {
+  const allowedCategories = categories && categories.length > 0 ? categories : ALL_CATEGORIES;
+  const categoryGuide = allowedCategories
+    .map((c) => `- ${c}: ${CATEGORY_DESCRIPTIONS[c]}`)
+    .join("\n");
+  const categoryConstraint =
+    categories && categories.length > 0
+      ? `IMPORTANT: ONLY use these categories the user selected: ${allowedCategories.join(", ")}. Do not use any other category.`
+      : "Spread across all 8 categories.";
 
   return [
     "You are a professional local travel planner AI with deep on-the-ground knowledge.",
@@ -116,15 +126,16 @@ function buildSystemPrompt(destination: string, daysCount: number): string {
     "",
     "Each card MUST use exactly one of these categories:",
     categoryGuide,
+    categoryConstraint,
     "",
     "Rules:",
     "- defaultDurationMinutes must be a multiple of 30 between 30 and 360.",
     "- costLevel is an integer from 1 ($) to 4 ($$$$); hidden gems are often cheap.",
     "- titles must be specific real places or activities (not generic). Use the real local name.",
     "- descriptions must be a single concise sentence (max ~160 chars).",
-    "- do NOT repeat the same place twice. Spread across all 8 categories.",
-    "- every place must realistically exist in or near ${destination}.",
-  ].join("\n").replace("${destination}", destination);
+    "- do NOT repeat the same place twice.",
+    `- every place must realistically exist in or near ${destination}.`,
+  ].join("\n");
 }
 
 /**
@@ -132,21 +143,25 @@ function buildSystemPrompt(destination: string, daysCount: number): string {
  *
  * @param destination The trip destination (city / country).
  * @param daysCount   Number of days the trip spans.
+ * @param categories  Optional subset of categories to restrict the AI to.
+ *                    When undefined, all categories are used.
  * @returns Array of validated, sanitized AICard objects ready for DB insert.
  */
 export async function generateCardsFromAI(
   destination: string,
   daysCount: number,
+  categories?: CardCategory[],
 ): Promise<AICard[]> {
   const client = getClient();
   const model = process.env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL;
   const safeDays = Math.max(1, daysCount);
+  const allowedCategories = categories && categories.length > 0 ? categories : ALL_CATEGORIES;
 
   const completion = await client.chat.completions.create({
     model,
     temperature: 0.8,
     messages: [
-      { role: "system", content: buildSystemPrompt(destination, safeDays) },
+      { role: "system", content: buildSystemPrompt(destination, safeDays, categories) },
       {
         role: "user",
         content: `Generate ${AI_CARDS_PER_TRIP} travel recommendation cards (half must-see, half hidden gems locals love) for a ${safeDays}-day trip to ${destination}.`,
@@ -157,7 +172,7 @@ export async function generateCardsFromAI(
       json_schema: {
         name: "travel_cards",
         strict: true,
-        schema: buildResponseSchema(),
+        schema: buildResponseSchema(categories),
       },
     },
   });
@@ -178,9 +193,9 @@ export async function generateCardsFromAI(
     const c = item as Record<string, unknown>;
     const title = typeof c.title === "string" ? c.title.trim() : "";
     const description = typeof c.description === "string" ? c.description.trim() : "";
-    const category = ALL_CATEGORIES.includes(c.category as CardCategory)
+    const category = allowedCategories.includes(c.category as CardCategory)
       ? (c.category as CardCategory)
-      : "TOURIST_ATTRACTION";
+      : allowedCategories[0];
     const duration =
       typeof c.defaultDurationMinutes === "number"
         ? clampDuration(c.defaultDurationMinutes)
