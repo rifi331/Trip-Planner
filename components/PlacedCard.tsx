@@ -3,7 +3,7 @@
 import React, { useCallback, useRef } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { Pencil, Trash2, Clock, GripVertical } from "lucide-react";
+import { Trash2, Clock, GripVertical } from "lucide-react";
 import type { CardCategory } from "@prisma/client";
 import type { CardWithSlot } from "@/lib/types";
 import { SLOT_HEIGHT_PX, MIN_DURATION_MINUTES, MAX_DURATION_MINUTES } from "@/lib/constants";
@@ -92,33 +92,42 @@ export function PlacedCard({ card, slotIndex, onEdit, onDelete, onResize }: Plac
       }}
       className={`absolute left-1 right-1 z-10 flex flex-col overflow-hidden rounded-md border-l-4 border shadow-card ${isDragging ? "opacity-30" : ""}`}
     >
+      {/* Top row: desktop-only drag grip + tappable title/time (opens edit) +
+          visible delete button. */}
       <div className="flex items-start justify-between gap-1 p-1.5">
         <div className="flex min-w-0 items-start gap-0.5">
-          {/* Dedicated grip drag handle (large touch target). */}
+          {/* Desktop drag grip (hidden on touch — mobile uses click-to-place). */}
           <button
             type="button"
-            className="flex h-7 w-5 shrink-0 cursor-grab items-center justify-center rounded opacity-50 active:cursor-grabbing"
+            className="hidden h-7 w-5 shrink-0 cursor-grab items-center justify-center rounded opacity-50 active:cursor-grabbing sm:flex"
             {...attributes}
             {...listeners}
             aria-label="Drag card"
           >
             <GripVertical size={14} />
           </button>
-          <div className="min-w-0">
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onEdit(card); }}
+            className="min-w-0 cursor-pointer text-left"
+            aria-label="Edit card"
+          >
             <p className="truncate text-xs font-semibold leading-tight">{card.title}</p>
             <p className="inline-flex items-center gap-0.5 text-[10px] opacity-80">
               <Clock size={9} /> {slot?.startTime} · {duration}m
             </p>
-          </div>
-        </div>
-        <div className="flex shrink-0 opacity-0 transition-opacity group-hover:opacity-100">
-          <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onEdit(card); }} className="opacity-60 hover:opacity-100" aria-label="Edit">
-            <Pencil size={10} />
-          </button>
-          <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onDelete(card); }} className="opacity-60 hover:opacity-100" aria-label="Delete">
-            <Trash2 size={10} />
           </button>
         </div>
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onDelete(card); }}
+          className="shrink-0 text-slate-400 hover:text-red-600"
+          aria-label="Delete card"
+        >
+          <Trash2 size={11} />
+        </button>
       </div>
       {height >= 120 && card.imageUrl && (
         <CardImage

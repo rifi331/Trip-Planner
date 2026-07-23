@@ -17,6 +17,7 @@ export interface GenerateButtonProps {
 export function GenerateButton({ tripId, onGenerated }: GenerateButtonProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [selected, setSelected] = useState<CardCategory[]>([...ALL_CATEGORIES]);
   const [expanded, setExpanded] = useState(false);
 
@@ -33,6 +34,7 @@ export function GenerateButton({ tripId, onGenerated }: GenerateButtonProps) {
     }
     setBusy(true);
     setError(null);
+    setInfo(null);
     try {
       const res = await fetch(`/api/trips/${tripId}/generate-cards`, {
         method: "POST",
@@ -41,6 +43,10 @@ export function GenerateButton({ tripId, onGenerated }: GenerateButtonProps) {
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j.error || "AI generation failed");
+      // Surface how many were skipped as duplicates, if any.
+      if (typeof j.skipped === "number" && j.skipped > 0) {
+        setInfo(`Added ${j.count} new · ${j.skipped} duplicate(s) skipped.`);
+      }
       await onGenerated();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
@@ -84,6 +90,7 @@ export function GenerateButton({ tripId, onGenerated }: GenerateButtonProps) {
         </div>
       )}
       {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      {info && !error && <p className="mt-1 text-xs text-slate-500">{info}</p>}
     </div>
   );
 }

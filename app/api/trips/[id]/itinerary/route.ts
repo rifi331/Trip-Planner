@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { batchItinerarySchema } from "@/lib/validations";
-import { findConflictingSlot, findInternalBatchConflict } from "@/lib/overlap";
+import { fitMaxDuration } from "@/lib/overlap";
 import { atLocalMidnight } from "@/lib/date-utils";
-import { ok, notFound, fail, conflict, parseOrFail, handleRoute } from "@/lib/api-utils";
+import { ok, notFound, fail, parseOrFail, handleRoute } from "@/lib/api-utils";
 
 type Params = { params: { id: string } };
 
@@ -54,46 +54,47 @@ export async function POST(request: Request, { params }: Params): Promise<NextRe
       }
     }
 
-    // 1. Internal conflicts inside the batch itself.
-    const internalConflict = findInternalBatchConflict(slots);
-    if (internalConflict) return conflict(internalConflict);
-
-    // 2. Conflicts with already-placed slots (excluding the cards in this batch).
+    // Auto-fit each slot's duration so it fits the gap before the next card
+    // on that day (instead of rejecting with 409). The requested duration is
+    // kept when there is room; otherwise it is shrunk to the nearest 30 min.
+    // Process sequentially so each fit accounts for the previous one.
+    const fitted: { cardId: string; assignedDate: Date; startTime: string; durationMinutes: number }[] = [];
     for (const slot of slots) {
-      const conflictSlot = await findConflictingSlot({
+      const fit = await fitMaxDuration({
         tripId: trip.id,
         cardId: slot.cardId,
         assignedDate: slot.assignedDate,
         startTime: slot.startTime,
-        durationMinutes: slot.durationMinutes,
+        requestedDuration: slot.durationMinutes,
       });
-      if (conflictSlot) {
-        return conflict(
-          `Card ${slot.cardId} overlaps an existing slot starting at ${conflictSlot.startTime}.`,
-        );
-      }
+      fitted.push({
+        cardId: slot.cardId,
+        assignedDate: atLocalMidnight(slot.assignedDate),
+        startTime: fit.startTime, // may be pushed forward to avoid an overlap
+        durationMinutes: fit.durationMinutes,
+      });
+      // Persist this fitted slot immediately so the next iteration sees it.
+      await prisma.itinerarySlot.upsert({
+        where: { cardId: slot.cardId },
+        create: {
+          tripId: trip.id,
+          cardId: slot.cardId,
+          assignedDate: atLocalMidnight(slot.assignedDate),
+          startTime: fit.startTime,
+          durationMinutes: fit.durationMinutes,
+        },
+        update: {
+          assignedDate: atLocalMidnight(slot.assignedDate),
+          startTime: fit.startTime,
+          durationMinutes: fit.durationMinutes,
+        },
+      });
     }
 
-    // Persist atomically: upsert every slot in one transaction.
-    const result = await prisma.$transaction(
-      slots.map((slot) =>
-        prisma.itinerarySlot.upsert({
-          where: { cardId: slot.cardId },
-          create: {
-            tripId: trip.id,
-            cardId: slot.cardId,
-            assignedDate: atLocalMidnight(slot.assignedDate),
-            startTime: slot.startTime,
-            durationMinutes: slot.durationMinutes,
-          },
-          update: {
-            assignedDate: atLocalMidnight(slot.assignedDate),
-            startTime: slot.startTime,
-            durationMinutes: slot.durationMinutes,
-          },
-        }),
-      ),
-    );
+    // Re-read the final state to return to the client.
+    const result = await prisma.itinerarySlot.findMany({
+      where: { tripId: trip.id, cardId: { in: fitted.map((f) => f.cardId) } },
+    });
 
     return ok({ saved: result.length, slots: result });
   });

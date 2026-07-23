@@ -20,7 +20,7 @@ vi.mock("@/lib/prisma", () => {
 });
 
 import { prisma } from "@/lib/prisma";
-import { findConflictingSlot, findInternalBatchConflict } from "@/lib/overlap";
+import { findConflictingSlot, findInternalBatchConflict, fitMaxDuration } from "@/lib/overlap";
 import type { ItinerarySlotInput } from "@/lib/validations";
 
 // Helper to set the mock DB rows for the next findConflictingSlot call.

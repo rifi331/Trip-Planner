@@ -45,8 +45,25 @@ export async function POST(request: Request, { params }: Params): Promise<NextRe
       return fail(message, 502);
     }
 
+    // Skip duplicates: only insert cards whose title does not already exist in
+    // this trip (case-insensitive). This makes re-clicking "Generate" additive
+    // for genuinely new places instead of piling on duplicates.
+    const existingTitles = new Set(
+      (await prisma.card.findMany({
+        where: { tripId: trip.id },
+        select: { title: true },
+      })).map((c) => c.title.trim().toLowerCase()),
+    );
+    const newCards = aiCards.filter(
+      (c) => !existingTitles.has(c.title.trim().toLowerCase()),
+    );
+
+    if (newCards.length === 0) {
+      return ok({ count: 0, cards: [], skipped: aiCards.length }, 200);
+    }
+
     const created = await prisma.card.createMany({
-      data: aiCards.map((c) => ({
+      data: newCards.map((c) => ({
         tripId: trip.id,
         title: c.title,
         description: c.description,
@@ -65,6 +82,6 @@ export async function POST(request: Request, { params }: Params): Promise<NextRe
       include: { itinerarySlot: true },
     });
 
-    return ok({ count: created.count, cards }, 201);
+    return ok({ count: created.count, cards, skipped: aiCards.length - newCards.length }, 201);
   });
 }

@@ -4,7 +4,9 @@ import {
   isSameDay,
   timeToMinutes,
   intervalsOverlap,
+  clampDuration,
 } from "@/lib/date-utils";
+import { SLOT_INTERVAL_MINUTES, MIN_DURATION_MINUTES, SLOTS_PER_DAY } from "@/lib/constants";
 import type { ItinerarySlotInput } from "@/lib/validations";
 
 /**
@@ -103,3 +105,85 @@ export function findInternalBatchConflict(slots: ItinerarySlotInput[]): string |
   }
   return null;
 }
+
+/**
+ * Compute the effective start time and maximum duration (a multiple of 30,
+ * >= 30) that a card can occupy on the given day WITHOUT overlapping any
+ * existing slot. Used to auto-shrink/auto-shift a card to fit the available
+ * gap instead of rejecting the placement.
+ *
+ * If the requested start falls inside an already-running slot, the start is
+ * pushed forward to the end of that slot before computing the available gap.
+ * If the gap is too small to even fit the minimum (30 min), the minimum is
+ * returned anyway — the caller may then decide whether to reject.
+ */
+export async function fitMaxDuration(args: {
+  tripId: string;
+  cardId: string;
+  assignedDate: Date;
+  startTime: string;
+  requestedDuration: number;
+  excludeSlotId?: string;
+}): Promise<{ startTime: string; durationMinutes: number }> {
+  const day = atLocalMidnight(args.assignedDate);
+  const requestedStart = timeToMinutes(args.startTime);
+  const endOfDay = SLOTS_PER_DAY * SLOT_INTERVAL_MINUTES; // 1440
+
+  const sameDaySlots = await prisma.itinerarySlot.findMany({
+    where: { tripId: args.tripId },
+    select: {
+      id: true,
+      cardId: true,
+      assignedDate: true,
+      startTime: true,
+      durationMinutes: true,
+    },
+  });
+
+  // Compute the intervals occupied by other cards on this day.
+  const others: { startMin: number; endMin: number }[] = [];
+  for (const slot of sameDaySlots) {
+    if (!isSameDay(atLocalMidnight(slot.assignedDate), day)) continue;
+    if (slot.id === args.excludeSlotId) continue;
+    if (slot.cardId === args.cardId) continue;
+    const s = timeToMinutes(slot.startTime);
+    others.push({ startMin: s, endMin: s + slot.durationMinutes });
+  }
+
+  // If the requested start falls inside an existing slot, push the start
+  // forward to just after that slot ends (snap to next 30-min boundary).
+  let effectiveStart = requestedStart;
+  for (const o of others) {
+    if (effectiveStart >= o.startMin && effectiveStart < o.endMin) {
+      effectiveStart = Math.max(effectiveStart, o.endMin);
+    }
+  }
+
+  // Find the soonest start of any slot that begins at/after the effective
+  // start (the "ceiling" of the available gap).
+  let ceiling = endOfDay;
+  for (const o of others) {
+    if (o.startMin > effectiveStart && o.startMin < ceiling) {
+      ceiling = o.startMin;
+    }
+    // Also handle a slot that still overlaps the pushed-forward start.
+    if (o.startMin <= effectiveStart && o.endMin > effectiveStart && o.endMin < ceiling) {
+      ceiling = o.endMin;
+    }
+  }
+
+  const available = ceiling - effectiveStart; // minutes available in the gap
+  const requested = clampDuration(args.requestedDuration);
+
+  // Snap down to the nearest 30, but never below the minimum.
+  const fitted = Math.max(
+    MIN_DURATION_MINUTES,
+    Math.floor(Math.min(available, requested) / SLOT_INTERVAL_MINUTES) * SLOT_INTERVAL_MINUTES,
+  );
+  // Convert the effective start (minutes) back to "HH:mm".
+  const h = Math.floor(effectiveStart / 60);
+  const m = effectiveStart % 60;
+  const startTimeStr = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  return { startTime: startTimeStr, durationMinutes: clampDuration(fitted) };
+}
+

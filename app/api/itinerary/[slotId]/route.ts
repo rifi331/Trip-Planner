@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { patchSlotSchema } from "@/lib/validations";
-import { findConflictingSlot } from "@/lib/overlap";
+import { fitMaxDuration } from "@/lib/overlap";
 import { atLocalMidnight } from "@/lib/date-utils";
-import { ok, notFound, fail, conflict, parseOrFail, handleRoute } from "@/lib/api-utils";
+import { ok, notFound, fail, parseOrFail, handleRoute } from "@/lib/api-utils";
 
 type Params = { params: { slotId: string } };
 
@@ -46,23 +46,21 @@ export async function PATCH(request: Request, { params }: Params): Promise<NextR
       return fail("Assigned date is outside the trip date range.", 400);
     }
 
-    const conflictSlot = await findConflictingSlot({
+    // Auto-fit the duration so it fits the gap before the next card on the
+    // resulting day, instead of rejecting with 409 on overlap. If the resize
+    // requested more than the gap allows, it shrinks to fit.
+    const fitted = await fitMaxDuration({
       tripId: existing.tripId,
       cardId: existing.cardId,
       assignedDate,
       startTime,
-      durationMinutes,
+      requestedDuration: durationMinutes,
       excludeSlotId: existing.id,
     });
-    if (conflictSlot) {
-      return conflict(
-        `This card overlaps another slot starting at ${conflictSlot.startTime}.`,
-      );
-    }
 
     const updated = await prisma.itinerarySlot.update({
       where: { id: params.slotId },
-      data: { assignedDate, startTime, durationMinutes },
+      data: { assignedDate, startTime: fitted.startTime, durationMinutes: fitted.durationMinutes },
       include: { card: true },
     });
 

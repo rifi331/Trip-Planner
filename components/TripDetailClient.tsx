@@ -6,7 +6,6 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
-  TouchSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -34,10 +33,12 @@ export function TripDetailClient({ tripId }: { tripId: string }) {
   const [toast, setToast] = useState<string | null>(null);
   const [pendingSlot, setPendingSlot] = useState<PendingSlot | null>(null);
 
-  // Desktop: instant drag after 5px move. Mobile: 2-second hold then wiggle.
+  // PointerSensor handles mouse/trackpad drag on desktop. Touch devices do
+  // NOT get drag (it was unreliable); mobile uses click-to-place instead.
+  // PointerSensor ignores touch by default when no TouchSensor is present,
+  // so taps on mobile fall through to the click handlers.
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 2000, tolerance: 5 } }),
   );
 
   const load = useCallback(async () => {
@@ -199,15 +200,23 @@ export function TripDetailClient({ tripId }: { tripId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ durationMinutes: newDurationMinutes }),
       });
-      if (res.status === 409) {
-        flash("Resized card overlaps a neighbor.");
-        setTrip((cur) =>
-          cur ? { ...cur, cards: cur.cards.map((c) => (c.id === cardId && c.itinerarySlot ? { ...c, itinerarySlot: { ...c.itinerarySlot, durationMinutes: prevDuration } } : c)) } : cur,
-        );
-        return;
-      }
       if (!res.ok) throw new Error();
+      // The server auto-fits the duration to the available gap, so sync the
+      // actual persisted duration back into state (it may be smaller than
+      // requested if it would have overlapped a neighbor).
+      const updated = await res.json();
+      if (updated?.durationMinutes !== undefined) {
+        setTrip((cur) =>
+          cur
+            ? { ...cur, cards: cur.cards.map((c) => (c.id === cardId && c.itinerarySlot ? { ...c, itinerarySlot: { ...c.itinerarySlot, durationMinutes: updated.durationMinutes } } : c)) }
+            : cur,
+        );
+      }
     } catch {
+      // Revert to the previous duration on error.
+      setTrip((cur) =>
+        cur ? { ...cur, cards: cur.cards.map((c) => (c.id === cardId && c.itinerarySlot ? { ...c, itinerarySlot: { ...c.itinerarySlot, durationMinutes: prevDuration } } : c)) } : cur,
+      );
       flash("Failed to resize card.");
     }
   }
