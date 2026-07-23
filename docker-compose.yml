@@ -19,4 +19,5 @@ services:
       OPENAI_MODEL: "gpt-4o-mini"
       PORT: "30001"
       NODE_ENV: "production"
+      TZ: "Asia/Kuala_Lumpur"
     restart: unless-stopped

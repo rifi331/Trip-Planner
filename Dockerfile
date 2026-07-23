@@ -27,11 +27,15 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=30001
+# Force the container timezone to Asia/Kuala_Lumpur (+08:00). Date handling in
+# the app (atLocalMidnight / date keys) depends on the process TZ; Docker does
+# NOT inherit the host TZ, so without this the container runs in UTC and
+# calendar days shift by one vs a +08:00 client (the Tue->Mon bug).
+ENV TZ=Asia/Kuala_Lumpur
 
 # Prisma's native engines (Rust binaries) require libssl and the glibc-compat
-# shims on Alpine (musl). Without them migrate deploy fails with
-# "Error load..." / "Could not parse schema engine response".
-RUN apk add --no-cache openssl libc6-compat
+# shims on Alpine (musl). tzdata backs the TZ env above on Alpine.
+RUN apk add --no-cache openssl libc6-compat tzdata
 
 RUN addgroup --system --gid 1001 nodejs \
  && adduser  --system --uid 1001 nextjs

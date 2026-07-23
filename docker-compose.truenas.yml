@@ -7,6 +7,7 @@ services:
       OPENAI_MODEL: gpt-4o-mini
       PORT: '30001'
       NODE_ENV: production
+      TZ: Asia/Kuala_Lumpur
     # Pin to a specific semantic version tag (NOT :latest, which TrueNAS/Docker
     # often caches and pulls a stale image). To upgrade, change this to the new
     # version, e.g. 0.1.1 (bugfix) or 0.2.0 (new feature).

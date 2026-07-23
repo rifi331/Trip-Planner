@@ -4,7 +4,7 @@ set -e
 
 echo "==== Travel Planner starting ===="
 echo "[entrypoint] Node version: $(node -v)"
-echo "[entrypoint] App version: 0.2.2"
+echo "[entrypoint] App version: 0.2.3"
 echo "[entrypoint] Timezone: $(date +%Z) ($(date +%z))"
 
 if [ -z "$DATABASE_URL" ]; then
